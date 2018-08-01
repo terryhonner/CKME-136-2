@@ -1,0 +1,189 @@
+---
+title: "CKME 136 - Descriptive Analysis of Data"
+author: "Terry Honner"
+date: "July 9, 2018"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#1 - load the file and create the functions
+
+```{r}
+rm(list=ls())
+library(pastecs)
+library(lubridate)
+library(corrplot)
+
+SP500wk<-read.csv("C:/Users/Chatty Cat Zen/Documents/CKME 136/dataset1.csv",header = T)
+
+wk_ret_code <- function(wr) (if(wr<=-0.02){"neg"} 
+                             else if(wr<=0.02){"neut"} 
+                             else {"pos"})
+
+
+```
+
+#2 - format the data
+
+
+```{r, echo=FALSE}
+
+#create a column to lable the type of return
+SP500wk$wk_ret_code<-0
+SP500wk$wk_ret_code<-sapply(SP500wk$wk_ret,wk_ret_code)
+SP500wk$wk_ret_code<-as.factor(SP500wk$wk_ret_code)
+
+table(SP500wk$wk_ret_code)  # check results
+```
+#3 Format for time series plotting
+
+```{r}
+
+SP500wk$Date<-as.Date(SP500wk$Date)  # format date for time series plotting
+SP500wk$uv2<-SP500wk$wk_ret+1 #create new column for current uv
+
+#FILL in cum.uv2 colmun  this is the non lagged uv
+SP500wk$cum.uv2 <-0
+SP500wk$cum.uv2[1]=SP500wk$uv2[1]
+for (i in 2:nrow(SP500wk)) SP500wk$cum.uv2[i] <-SP500wk$cum.uv2[i-1]*SP500wk$uv2[i]
+
+#tail(SP500wk$cum.uv2)  #check - values should be ~ 130
+
+par(mfrow=c(1,2))
+plot(SP500wk$cum.uv2 ~ SP500wk$Date, type = "l")
+
+hist(SP500wk$wk_ret)
+hist(SP500wk$wk_pr_range.1)
+hist(SP500wk$vol.delta...1)
+
+
+format(stat.desc(SP500wk$wk_ret),scientific = F)
+```
+Scatter Plots of data vs the weekly return
+```{r}
+
+par(mar=c(1,1,1,1))
+par(mfrow=c(4,2))
+plot(SP500wk$wk_ret,SP500wk$wk_pr_range.1)
+plot(SP500wk$wk_ret,SP500wk$wk_pr_range.2)
+plot(SP500wk$wk_ret,SP500wk$wk_pr_range.3)
+plot(SP500wk$wk_ret,SP500wk$wk_pr_range.4)
+plot(SP500wk$wk_ret,SP500wk$vol.delta...1)
+plot(SP500wk$wk_ret,SP500wk$vol.delta...2)
+plot(SP500wk$wk_ret,SP500wk$vol.delta...3)
+plot(SP500wk$wk_ret,SP500wk$vol.delta...4)
+
+par(mfrow=c(4,2))
+plot(SP500wk$wk_ret,SP500wk$w.1)
+plot(SP500wk$wk_ret,SP500wk$w.2)
+plot(SP500wk$wk_ret,SP500wk$w.3)
+plot(SP500wk$wk_ret,SP500wk$w.4)
+plot(SP500wk$wk_ret,SP500wk$c2)
+plot(SP500wk$wk_ret,SP500wk$c3)
+plot(SP500wk$wk_ret,SP500wk$c4)
+
+par(mfrow=c(2,2))
+plot(SP500wk$wk_ret,SP500wk$c13)
+plot(SP500wk$wk_ret,SP500wk$c26)
+plot(SP500wk$wk_ret,SP500wk$c39)
+plot(SP500wk$wk_ret,SP500wk$c52)
+
+#names(SP500wk)
+pairs(SP500wk[,c(4,19,20,21,22,24,30,31,32,33)])
+
+```
+```{r}
+##Examine correlations of the variables
+
+colremove<-c(1,2,3,15,23,28,29,34,36,37,38,35) #35 remove variables that are not part of training
+
+corrcols<-SP500wk[,-colremove]
+names(corrcols) #check
+
+
+par(mfrow=c(1,1))
+corrplot(cor(corrcols,method="pearson"),type="upper")
+corrplot(cor(corrcols,method="spearman"),type="upper")
+corrplot(cor(corrcols,method="kendal"),type="upper")
+
+
+
+```
+#Break up the data into different time series based on the doubling of Price
+```{r}
+SP500wk$set<-0 #create new column to denote the set
+SP500wk$set[1]<-1
+for (i in 2:nrow(SP500wk)) 
+  ifelse(SP500wk$Adj.Close[i]>=SP500wk$Adj.Close[1]*2^(SP500wk$set[i-1]),
+         SP500wk$set[i]<-SP500wk$set[i-1]+1,
+         SP500wk$set[i]<-SP500wk$set[i-1])
+tail(SP500wk$set)  #check - values should be 8
+master<-SP500wk  # create a master set with all variables pre manipuation
+
+#set up training sets based on trajectories
+
+train1<-SP500wk[which(SP500wk$set=="1"),]
+train2<-SP500wk[which(SP500wk$set=="2"),]
+train3<-SP500wk[which(SP500wk$set=="3"),]
+train4<-SP500wk[which(SP500wk$set=="4"),]
+train5<-SP500wk[which(SP500wk$set=="5"),]
+train6<-SP500wk[which(SP500wk$set=="6"),]
+train7<-SP500wk[which(SP500wk$set=="7"),]
+train8<-SP500wk[which(SP500wk$set=="8"),]
+
+#See their trends
+par(mfrow=c(3,3))
+plot(train1$cum.uv2~train1$Date, type = "l")
+plot(train2$cum.uv2~train2$Date, type = "l")
+plot(train3$cum.uv2~train3$Date, type = "l")
+plot(train4$cum.uv2~train4$Date, type = "l")
+plot(train5$cum.uv2~train5$Date, type = "l")
+plot(train6$cum.uv2~train6$Date, type = "l")
+plot(train7$cum.uv2~train7$Date, type = "l")
+#plot(train8$cum.uv2~train8$Date, type = "l")
+```
+#Look at the time series plots and their distributions
+```{r}
+
+par(mar=c(1,1,1,1))
+par(mfrow=c(4,2))
+plot(train1$cum.uv2~train1$Date, type = "l")
+hist(train1$wk_ret)
+plot(train2$cum.uv2~train2$Date, type = "l")
+hist(train2$wk_ret)
+plot(train3$cum.uv2~train3$Date, type = "l")
+hist(train3$wk_ret)
+plot(train4$cum.uv2~train4$Date, type = "l")
+hist(train4$wk_ret)
+
+```
+
+```{r}
+
+par(mar=c(1,1,1,1))
+par(mfrow=c(4,2))
+plot(train5$cum.uv2~train5$Date, type = "l")
+hist(train5$wk_ret)
+plot(train6$cum.uv2~train6$Date, type = "l")
+hist(train6$wk_ret)
+plot(train7$cum.uv2~train7$Date, type = "l")
+hist(train7$wk_ret)
+#plot(train8$cum.uv2~train8$Date, type = "l")
+#hist(train8$wk_ret)
+```
+```{r}
+pairs(train1[,c(4,19,20,21,22,24,30,31,32,33)])
+pairs(train2[,c(4,19,20,21,22,24,30,31,32,33)])
+pairs(train3[,c(4,19,20,21,22,24,30,31,32,33)])
+pairs(train4[,c(4,19,20,21,22,24,30,31,32,33)])
+pairs(train5[,c(4,19,20,21,22,24,30,31,32,33)])
+pairs(train6[,c(4,19,20,21,22,24,30,31,32,33)])
+pairs(train7[,c(4,19,20,21,22,24,30,31,32,33)])
+
+```
+

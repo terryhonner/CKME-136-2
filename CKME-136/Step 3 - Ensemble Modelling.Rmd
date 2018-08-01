@@ -1,0 +1,394 @@
+---
+title: "CKME 136 - Modelling"
+author: "Terry Honner"
+date: "July 9, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#1 - load the libaries, load the data and create the functions
+
+```{r}
+rm(list=ls())
+
+library(caret)
+library(C50)
+library(gbm)
+library(glmnet)
+library(LogicReg)
+library(nnet)
+library(rpart)
+library(fastAdaboost)
+library(randomGLM)
+library(nnet)
+library(rpart)
+library(pROC)
+
+masterdata<-read.csv("C:/Users/Chatty Cat Zen/Documents/CKME 136/SP500wk.csv",header = T)
+
+wk_ret_code <- function(wr) (if(wr<=-0.02){"neg"} 
+                             #else if(wr<=0.02){"neut"}  
+                             else {"neut"})
+
+#head(masterdata,20)
+```
+
+#2 - format the data
+
+```{r, echo=FALSE}
+
+masterdata$Date<-as.Date(masterdata$Date) # format date
+
+#create a column to lable the type of return
+masterdata$wk_ret_code<-0
+masterdata$wk_ret_code<-sapply(masterdata$wk_ret,wk_ret_code)
+masterdata$wk_ret_code<-as.factor(masterdata$wk_ret_code)
+
+table(masterdata$wk_ret_code) # check results
+
+```
+#3 More formatting for splitting the data set
+
+```{r}
+#Break up the data into different time series based on the doubling of Price
+
+masterdata$set<-0#create new column to denote the set
+masterdata$set[1]<-1
+for (i in 2:nrow(masterdata)) 
+  ifelse(masterdata$Adj.Close[i]>=masterdata$Adj.Close[1]*2^(masterdata$set[i-1]),
+         masterdata$set[i]<-masterdata$set[i-1]+1,
+         masterdata$set[i]<-masterdata$set[i-1])
+
+
+tail(masterdata$set) #check - values should be 8
+```
+
+#4 Feature Selection
+```{r}
+
+master_ft_select <- subset(masterdata,select=c(w.1,c3,c4,c13,c26,c39,c52,wk_pr_range.1,wk_pr_range.2,wk_pr_range.3,wk_pr_range.4,wk_ret_code,set))  #include wk_ret_code as dep. var and set for creating training sets
+
+test_set<-c(names(master_ft_select))
+remove<-c("set")
+test_set<-setdiff(test_set,remove)
+test_set
+
+```
+#5 set up training sets based on trajectories
+```{r}
+
+train1<-master_ft_select[which(master_ft_select$set=="1"),]
+train2<-master_ft_select[which(master_ft_select$set=="2"),]
+train3<-master_ft_select[which(master_ft_select$set=="3"),]
+train4<-master_ft_select[which(master_ft_select$set=="4"),]
+train5<-master_ft_select[which(master_ft_select$set=="5"),]
+train6<-master_ft_select[which(master_ft_select$set=="6"),]
+train7<-master_ft_select[which(master_ft_select$set=="7"),]
+train8<-master_ft_select[which(master_ft_select$set=="8"),]
+
+mastertest<-master_ft_select[which(master_ft_select$set =="7" | master_ft_select$set=="8"),]
+mastertrain<-master_ft_select[-which(master_ft_select$set =="7" | master_ft_select$set=="8"),]
+
+test_method<-"sequential"
+
+#*****************************************************************************************************
+
+#Option 2 - Random sets
+# 
+# index <- createDataPartition(masterdata$wk_ret_code, p = 0.7, list = FALSE)
+# mastertrain <- masterdata[index, ]
+# mastertest <- masterdata[-index, ]
+# test_method<-"random"
+
+#******************************************************************************************************
+
+Resultdf<-as.data.frame(matrix(0,ncol=11,nrow=5))
+names(Resultdf)<-c("negneg","neutneg","negneut","neutneut","StartTime","EndTime","train_obs","CVfolds","model","AUC","sampling")
+i=1
+
+
+```
+#5a Run Model and collect results 
+```{r}
+#Model A
+
+train_data<-subset(mastertrain,select=test_set)
+test_data<-subset(mastertest,select=test_set)
+
+ctrl <- trainControl(method = "repeatedcv", 
+                     number = 10, 
+                     savePredictions = 'final',
+                     classProbs=T,
+                     verboseIter = FALSE,
+                     sampling = "down")
+
+Resultdf[i,5]<-Sys.time()  #record the start time of training model to track efficiency
+
+model <- caret::train(wk_ret_code ~ .,
+                          data = train_data,
+                          method = "svmRadial",
+                         preProcess = c("scale", "center"),
+                          trControl = ctrl)
+
+Resultdf[i,6]<-Sys.time()  #record the end time of training model to track efficiency
+
+
+#record results
+final <- data.frame(actual = test_data$wk_ret_code,
+                        predict(model, newdata = test_data))
+
+finaltable<-table(final)
+Resultdf[i,1]<-finaltable[1,1]
+Resultdf[i,2]<-finaltable[1,2]
+Resultdf[i,3]<-finaltable[2,1]
+Resultdf[i,4]<-finaltable[2,2]
+Resultdf[i,7]<-nrow(train_data)
+Resultdf[i,8]<-ctrl$number
+Resultdf[i,9]<-model$method
+Resultdf[i,11]<-ctrl$sampling
+
+mastertest$pred_a <- predict(model, newdata = test_data)
+mastertest$pred_a_prob<-predict(model, newdata = test_data,type = 'prob')
+
+mastertrain$OOF_preda_neg=model$pred$neg[order(model$pred$rowIndex)]
+mastertest$OOF_preda_neg=predict(model,test_data,type='prob')$neg
+
+i<-i+1
+
+```
+#5b Run Model and collect results 
+```{r}
+
+train_data<-subset(mastertrain,select=test_set)
+test_data<-subset(mastertest,select=test_set)
+
+
+#run model 
+ctrl <- trainControl(method = "repeatedcv", 
+                     number = 10, 
+                     savePredictions = 'final',
+                     classProbs=T,
+                     verboseIter = FALSE,
+                     sampling = "down")
+
+Resultdf[i,5]<-Sys.time()  #record the start time of training model to track efficiency
+
+model <- caret::train(wk_ret_code ~ .,
+                          data = train_data,
+                          method = "rpart",
+                         preProcess = c("scale", "center"),
+                          trControl = ctrl)
+
+Resultdf[i,6]<-Sys.time()  #record the end time of training model to track efficiency
+
+
+#record results
+final <- data.frame(actual = test_data$wk_ret_code,
+                        predict(model, newdata = test_data))
+
+finaltable<-table(final)
+Resultdf[i,1]<-finaltable[1,1]
+Resultdf[i,2]<-finaltable[1,2]
+Resultdf[i,3]<-finaltable[2,1]
+Resultdf[i,4]<-finaltable[2,2]
+Resultdf[i,7]<-nrow(train_data)
+Resultdf[i,8]<-ctrl$number
+Resultdf[i,9]<-model$method
+Resultdf[i,11]<-ctrl$sampling
+
+mastertest$pred_b <- predict(model, newdata = test_data)
+mastertest$pred_b_prob<-predict(model, newdata = test_data,type = 'prob')
+
+mastertrain$OOF_predb_neg=model$pred$neg[order(model$pred$rowIndex)]
+mastertest$OOF_predb_neg=predict(model,test_data,type='prob')$neg
+
+i=i+1
+```
+#5c Run Model and collect results
+```{r}
+
+train_data<-subset(mastertrain,select=test_set)
+test_data<-subset(mastertest,select=test_set)
+
+
+#run model
+ctrl <- trainControl(method = "repeatedcv",
+                     number = 10,
+                     savePredictions = 'final',
+                     classProbs=T,
+                     verboseIter = FALSE,
+                     sampling = "down")
+
+Resultdf[i,5]<-Sys.time()  #record the start time of training model to track efficiency
+
+model <- caret::train(wk_ret_code ~ .,
+                          data = train_data,
+                          method = "knn",
+                         preProcess = c("scale", "center"),
+                          trControl = ctrl)
+
+Resultdf[i,6]<-Sys.time()  #record the end time of training model to track efficiency
+
+
+final <- data.frame(actual = test_data$wk_ret_code,
+                        predict(model, newdata = test_data))
+
+finaltable<-table(final)
+Resultdf[i,1]<-finaltable[1,1]
+Resultdf[i,2]<-finaltable[1,2]
+Resultdf[i,3]<-finaltable[2,1]
+Resultdf[i,4]<-finaltable[2,2]
+Resultdf[i,7]<-nrow(train_data)
+Resultdf[i,8]<-ctrl$number
+Resultdf[i,9]<-model$method
+Resultdf[i,11]<-ctrl$sampling
+
+mastertest$pred_c <- predict(model, newdata = test_data)
+mastertest$pred_c_prob<-predict(model, newdata = test_data,type = 'prob')
+
+mastertrain$OOF_predc_neg=model$pred$neg[order(model$pred$rowIndex)]
+mastertest$OOF_predc_neg=predict(model,test_data,type='prob')$neg
+
+
+i=i+1
+
+```
+#5d Run Model and collect results
+```{r}
+# 
+# train_data<-subset(mastertrain,select=test_set)
+# test_data<-subset(mastertest,select=test_set)
+# 
+# 
+# #run model 
+# ctrl <- trainControl(method = "repeatedcv", 
+#                      number = 10, 
+#                      savePredictions = 'final',
+#                      classProbs=T,
+#                      verboseIter = FALSE,
+#                      sampling = "down")
+# 
+# Resultdf[i,5]<-Sys.time()  #record the start time of training model to track efficiency
+# 
+# model <- caret::train(wk_ret_code ~ .,
+#                           data = train_data,
+#                           method = "nb",
+#                          preProcess = c("scale", "center"),
+#                           trControl = ctrl)
+# 
+# Resultdf[i,6]<-Sys.time()  #record the end time of training model to track efficiency
+# 
+# 
+# final <- data.frame(actual = test_data$wk_ret_code,
+#                         predict(model, newdata = test_data))
+# 
+# finaltable<-table(final)
+# Resultdf[i,1]<-finaltable[1,1]
+# Resultdf[i,2]<-finaltable[1,2]
+# Resultdf[i,3]<-finaltable[2,1]
+# Resultdf[i,4]<-finaltable[2,2]
+# Resultdf[i,7]<-nrow(train_data)
+# Resultdf[i,8]<-ctrl$number
+# Resultdf[i,9]<-model$method
+#Resultdf[i,11]<-ctrl$sampling
+# 
+# mastertest$pred_d <- predict(model, newdata = test_data)
+# mastertest$pred_d_prob<-predict(model, newdata = test_data,type = 'prob')
+# 
+# mastertrain$OOF_predd_neg=model$pred$neg[order(model$pred$rowIndex)]
+# mastertest$OOF_predd_neg=predict(model,test_data,type='prob')$neg
+# 
+# 
+# i=i+1
+
+```
+Ensemble models
+```{r}
+ensemble_set<-c("OOF_preda_neg","OOF_predb_neg","OOF_predc_neg","wk_ret_code")
+
+train_data<-subset(mastertrain,select=ensemble_set)
+test_data<-subset(mastertest,select=ensemble_set)
+
+ctrl <- trainControl(method = "repeatedcv", 
+                     number = 10, 
+                     savePredictions = 'final',
+                     classProbs=T,
+                     verboseIter = FALSE,
+                     sampling = "down")
+
+Resultdf[i,5]<-Sys.time()  #record the start time of training model to track efficiency
+
+ens_model <- caret::train(wk_ret_code ~ .,
+                          data = train_data,
+                          method = "avNNet",
+                          preProcess = c("scale", "center"),
+                          trControl = ctrl)
+
+mastertest$ens <- predict(ens_model, newdata = test_data)
+
+Resultdf[i,6]<-Sys.time()  #record the end time of training model to track efficiency
+
+
+#*******************RECORD RESULTS***********************************************************
+final <- data.frame(actual = mastertest$wk_ret_code,predicted = mastertest$ens)
+names(final)<-c("actual","predicted")
+
+finaltable<-table(final)
+
+Resultdf[i,1]<-finaltable[1,1]
+Resultdf[i,2]<-finaltable[1,2]
+Resultdf[i,3]<-finaltable[2,1]
+Resultdf[i,4]<-finaltable[2,2]
+Resultdf[i,7]<-nrow(train_data)
+Resultdf[i,8]<-ctrl$number
+Resultdf[i,9]<-ens_model$method
+Resultdf[i,11]<-ctrl$sampling
+
+mastertest$pred_ens <- predict(ens_model, newdata = test_data)
+mastertest$pred_ens_prob<-predict(ens_model, newdata = test_data,type = 'prob')
+
+```
+
+#Calculate Statistics
+
+```{r}
+#head(mastertest)
+
+# confusionMatrix(mastertest$wk_ret_code,mastertest$ens)
+# confusionMatrix(mastertest$wk_ret_code,mastertest$pred_a)
+# confusionMatrix(mastertest$wk_ret_code,mastertest$pred_b)
+# confusionMatrix(mastertest$wk_ret_code,mastertest$pred_c)
+
+
+MCC <- function(TP, TN, FP, FN) {(TP*TN-FP*FN)/(sqrt((TP+FP)*(TP+FN)*(TN+FP)*(TN+FN)))}
+
+Resultdf$testobs<-Resultdf$negneg+Resultdf$neutneg+Resultdf$negneut+Resultdf$neutneut
+Resultdf$TP<-Resultdf$negneg+Resultdf$neutneut
+Resultdf$Accuracy<-Resultdf$TP/Resultdf$testobs
+Resultdf$PRneg<-Resultdf$negneg/(Resultdf$negneg+Resultdf$neutneg)
+Resultdf$PRneut<-Resultdf$neutneut/(Resultdf$negneut+Resultdf$neutneut)
+Resultdf$Recneg<-Resultdf$negneg/(Resultdf$negneg+Resultdf$negneut)
+Resultdf$Recneut<-Resultdf$neutneut/(Resultdf$neutneg+Resultdf$neutneut)
+Resultdf$PRtime<-Resultdf$EndTime-Resultdf$StartTime
+Resultdf$T_obs_sec<-(Resultdf$train_obs*Resultdf$CVfolds)/Resultdf$PRtime
+Resultdf$Actual<-Resultdf$negneg+Resultdf$neutneg
+Resultdf$Predicted<-Resultdf$negneg+Resultdf$negneut
+Resultdf$F1Score<-2*(Resultdf$PRneg*Resultdf$Recneg)/(Resultdf$PRneg+Resultdf$Recneg)
+Resultdf$MCC<-mapply(MCC,Resultdf$negneg,Resultdf$neutneut,Resultdf$negneut,Resultdf$neutneg)
+
+Resultdf[1,10]<-auc(mastertest$wk_ret_code,mastertest$pred_a_prob$neg)
+Resultdf[2,10]<-auc(mastertest$wk_ret_code,mastertest$pred_b_prob$neg)
+Resultdf[3,10]<-auc(mastertest$wk_ret_code,mastertest$pred_c_prob$neg)
+#Resultdf[4,10]<-auc(mastertest$wk_ret_code,mastertest$pred_d_prob$neg)
+Resultdf[4,10]<-auc(mastertest$wk_ret_code,mastertest$pred_ens_prob$neg)
+
+
+
+write(test_set,file = "C:/Users/Chatty Cat Zen/Documents/CKME 136/output/ensmodeltest.csv",ncolumns=20)
+write(test_method,file = "C:/Users/Chatty Cat Zen/Documents/CKME 136/output/ensmodeltest.csv",sep=",",append = T)
+write.table(Resultdf,file = "C:/Users/Chatty Cat Zen/Documents/CKME 136/output/ensmodeltest.csv",sep=",",append = T)
+
+```

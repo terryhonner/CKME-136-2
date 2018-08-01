@@ -1,0 +1,105 @@
+---
+title: "CKME 136"
+author: "Terry Honner"
+date: "July 4, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#1 - load the file, libraries, and create functions
+
+```{r}
+rm(list=ls())
+
+library(caret)
+library(FSelectorRcpp)
+
+SP500wk<-read.csv("C:/Users/Chatty Cat Zen/Documents/CKME 136/test.csv",header = T)
+
+wk_ret_code <- function(wr) (if(wr<=-0.02){"neg"} 
+                             #else if(wr<=-0){"neg"} 
+                             #else if(wr<=0.02){"neut"} 
+                             else {"pos"})
+
+```
+
+#2 - format the data
+
+
+```{r, echo=FALSE}
+
+SP500wk$Date<-as.Date(SP500wk$Date) # format date for time series plotting
+
+#create a column to lable the type of return
+SP500wk$wk_ret_code<-0
+SP500wk$wk_ret_code<-sapply(SP500wk$wk_ret,wk_ret_code)
+SP500wk$wk_ret_code<-as.factor(SP500wk$wk_ret_code)
+
+#str(SP500wk) # check results
+
+table(SP500wk$wk_ret_code) # check results
+
+```
+
+
+```{r}
+
+names(SP500wk)
+
+```
+
+```{r}
+colremove<-c("Date","Adj.Close","wk_ret")
+#colremove<-c(1,2,4,15,23,28,29)
+features<-setdiff(names(SP500wk),colremove)
+SP500wk<-subset(SP500wk,select=features)
+names(SP500wk)
+
+
+```
+
+```{r}
+pcSP500<-princomp(SP500wk[,1:(ncol(SP500wk)-1)],cor=TRUE, score=TRUE)
+summary(pcSP500)
+plot(pcSP500)
+pcSP500$loadings
+```
+
+```{r}
+
+##Ranking features using lvq
+control<-trainControl(method="repeatedcv", number = 10, repeats = 3)
+model<-train(wk_ret_code~.,
+             data=SP500wk,
+             method="lvq",
+             preProcess="scale",
+             trControl=control)
+
+importance<-varImp(model,scale=F)
+print(importance)
+plot(importance)
+```
+
+```{r}
+#Recursive Feature Elimitation
+
+control<-rfeControl(functions=rfFuncs,
+                    method="cv",
+                    number=10)
+results<-rfe(SP500wk[,1:(ncol(SP500wk)-1)],SP500wk[,ncol(SP500wk)],sizes=c(1:(ncol(SP500wk)-1)),rfeControl = control)
+print(results)
+predictors(results)
+plot(results,type=c("g","o"))
+```
+Information Gain
+```{r}
+weight <- information_gain(formula = wk_ret_code~., data = SP500wk, type = "gainratio")
+#?information_gain()
+
+weight
+
+```
+
