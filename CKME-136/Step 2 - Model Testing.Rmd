@@ -67,28 +67,28 @@ test_set<-setdiff(test_set,remove)
 
 #Option 1 - sequenced training
 
-# train1<-master_ft_select[which(master_ft_select$set=="1"),]
-# train2<-master_ft_select[which(master_ft_select$set=="2"),]
-# train3<-master_ft_select[which(master_ft_select$set=="3"),]
-# train4<-master_ft_select[which(master_ft_select$set=="4"),]
-# train5<-master_ft_select[which(master_ft_select$set=="5"),]
-# train6<-master_ft_select[which(master_ft_select$set=="6"),]
-# train7<-master_ft_select[which(master_ft_select$set=="7"),]
-# train8<-master_ft_select[which(master_ft_select$set=="8"),]
-# 
-# mastertest<-master_ft_select[which(master_ft_select$set =="7" | master_ft_select$set=="8"),]
-# mastertrain<-master_ft_select[-which(master_ft_select$set =="7" | master_ft_select$set=="8"),]
-# 
-# test_method<-"sequential"
+train1<-master_ft_select[which(master_ft_select$set=="1"),]
+train2<-master_ft_select[which(master_ft_select$set=="2"),]
+train3<-master_ft_select[which(master_ft_select$set=="3"),]
+train4<-master_ft_select[which(master_ft_select$set=="4"),]
+train5<-master_ft_select[which(master_ft_select$set=="5"),]
+train6<-master_ft_select[which(master_ft_select$set=="6"),]
+train7<-master_ft_select[which(master_ft_select$set=="7"),]
+train8<-master_ft_select[which(master_ft_select$set=="8"),]
+
+mastertest<-master_ft_select[which(master_ft_select$set =="7" | master_ft_select$set=="8"),]
+mastertrain<-master_ft_select[-which(master_ft_select$set =="7" | master_ft_select$set=="8"),]
+
+test_method<-"sequential"
 
 #*****************************************************************************************************
 
 #Option 2 - Random sets
 
-index <- createDataPartition(masterdata$wk_ret_code, p = 0.7, list = FALSE)
-mastertrain <- masterdata[index, ]
-mastertest <- masterdata[-index, ]
-test_method<-"random"
+# index <- createDataPartition(masterdata$wk_ret_code, p = 0.7, list = FALSE)
+# mastertrain <- masterdata[index, ]
+# mastertest <- masterdata[-index, ]
+# test_method<-"random"
 
 
 #******************************************************************************************************

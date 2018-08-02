@@ -17,7 +17,7 @@ rm(list=ls())
 library(caret)
 library(FSelectorRcpp)
 
-SP500wk<-read.csv("C:/Users/Chatty Cat Zen/Documents/CKME 136/test.csv",header = T)
+SP500wk<-read.csv("C:/users/Chatty Cat Zen/Documents/GitHub/CKME-136/test.csv",header = T)
 
 wk_ret_code <- function(wr) (if(wr<=-0.02){"neg"} 
                              #else if(wr<=-0){"neg"} 
